@@ -17,15 +17,53 @@ export default function GbpPostForm() {
     }
 
     setIsSubmitting(true);
-    setStatusMessage('AI文章生成＆Googleマイビジネスへ送信中...');
-
-    // 写真とテキストを1つの塊（FormData）にパックする（これがバラバラ防止の鍵です）
-    const formData = new FormData();
-    formData.append('image', image);
-    formData.append('keywords', keywords);
-    formData.append('notes', notes);
+    setStatusMessage('AI文章生成＆Googleマイビジネスへ送信中 (重い画像は自動圧縮中)...');
 
     try {
+      // 📸 --- ここから画像圧縮処理 ---
+      let fileToSend = image;
+
+      // 画像サイズが 2MB を超えている場合はブラウザ側でリサイズ・圧縮する
+      if (image && image.size > 2 * 1024 * 1024) {
+        const imgElement = await new Promise<HTMLImageElement>((resolve) => {
+          const img = new Image();
+          img.src = URL.createObjectURL(image);
+          img.onload = () => resolve(img);
+        });
+
+        const canvas = document.createElement('canvas');
+        let width = imgElement.width;
+        let height = imgElement.height;
+        
+        // Googleビジネスプロフィールに最適な横幅1200pxに縮小
+        const MAX_WIDTH = 1200;
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(imgElement, 0, 0, width, height);
+
+        // 画質を70%に落として軽量なJPEGに変換 (4.5MB制限を確実に突破)
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.7);
+        });
+
+        if (blob) {
+          fileToSend = new File([blob], image.name, { type: 'image/jpeg' });
+        }
+      }
+      // --- ここまで画像圧縮処理 ---
+
+      // 写真とテキストを1つの塊（FormData）にパックする
+      const formData = new FormData();
+      formData.append('image', fileToSend); // 👈 圧縮した画像（または元の画像）をセット
+      formData.append('keywords', keywords);
+      formData.append('notes', notes);
+
       // 外部への直接通信によるCORSエラーを防ぐため、自前のAPI Routesを経由させます
       const response = await fetch('/api/gbp-post', {
         method: 'POST',
