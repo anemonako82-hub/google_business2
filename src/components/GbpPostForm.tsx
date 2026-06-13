@@ -23,7 +23,6 @@ export default function GbpPostForm() {
       // 📸 --- ここから画像圧縮処理 ---
       let fileToSend = image;
 
-      // 画像サイズが 2MB を超えている場合はブラウザ側でリサイズ・圧縮する
       if (image && image.size > 2 * 1024 * 1024) {
         const imgElement = await new Promise<HTMLImageElement>((resolve) => {
           const img = new Image();
@@ -35,7 +34,6 @@ export default function GbpPostForm() {
         let width = imgElement.width;
         let height = imgElement.height;
         
-        // Googleビジネスプロフィールに最適な横幅1200pxに縮小
         const MAX_WIDTH = 1200;
         if (width > MAX_WIDTH) {
           height = Math.round((height * MAX_WIDTH) / width);
@@ -47,7 +45,6 @@ export default function GbpPostForm() {
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(imgElement, 0, 0, width, height);
 
-        // 画質を70%に落として軽量なJPEGに変換 (4.5MB制限を確実に突破)
         const blob = await new Promise<Blob | null>((resolve) => {
           canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.7);
         });
@@ -58,26 +55,27 @@ export default function GbpPostForm() {
       }
       // --- ここまで画像圧縮処理 ---
 
-      // 写真とテキストを1つの塊（FormData）にパックする
       const formData = new FormData();
-      formData.append('image', fileToSend); // 👈 圧縮した画像（または元の画像）をセット
+      formData.append('image', fileToSend);
       formData.append('keywords', keywords);
       formData.append('notes', notes);
 
-      // 外部への直接通信によるCORSエラーを防ぐため、自前のAPI Routesを経由させます
       const response = await fetch('/api/gbp-post', {
         method: 'POST',
         body: formData,
       });
 
-      if (response.ok) {
+      // 🌟 APIからのお返事（json）を確実に読み込む
+      const result = await response.json().catch(() => ({}));
+
+      // ⭕ response.ok または APIが返した success: true のどちらでも成功と認める
+      if (response.ok || result?.success) {
         setStatusMessage('🚀 送信完了しました！Googleマップをご確認ください。');
         setKeywords('');
         setNotes('');
         setImage(null);
       } else {
-        const errorData = await response.json();
-        setStatusMessage(`❌ エラーが発生しました: ${errorData.message || '送信失敗'}`);
+        setStatusMessage(`❌ エラーが発生しました: ${result?.error || '送信失敗'}`);
       }
     } catch (error) {
       setStatusMessage('❌ 通信エラーが発生しました。');
@@ -99,7 +97,7 @@ export default function GbpPostForm() {
           <input
             type="file"
             accept="image/*"
-            capture="environment" /* スマホでカメラを直接起動しやすくする属性 */
+            capture="environment"
             onChange={(e) => setImage(e.target.files?.[0] || null)}
             className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
             required
@@ -142,8 +140,9 @@ export default function GbpPostForm() {
         </button>
       </form>
 
+      {/* 🌟 エラーが絶対に起きないよう安全にメッセージを表示 */}
       {statusMessage && (
-        <div className={`mt-4 p-3 rounded-md text-sm font-medium ${statusMessage.startsWith('❌') ? 'bg-red-50 text-red-700' : 'bg-indigo-50 text-indigo-800'}`}>
+        <div className={`mt-4 p-3 rounded-md text-sm font-medium ${String(statusMessage).startsWith('❌') ? 'bg-red-50 text-red-700' : 'bg-indigo-50 text-indigo-800'}`}>
           {statusMessage}
         </div>
       )}
